@@ -17,10 +17,6 @@ install.packages("caret")
 ```
 
 ```{r}
-install.packages("here")
-```
-
-```{r}
 # Load the necessary packages
 library("Peptides")
 library("protr")
@@ -40,16 +36,16 @@ Importing the AMP dataset sourced from X. The negative datset was obtained from 
 
 ```{r}
 # Input AMP Data from a fasta file
-AMP_seqs <- read.fasta(file = "./Data/amps.fasta", seqtype = "AA")
+AMP_seqs <- read.fasta(file = "../Data/amps.fasta", seqtype = "AA")
 
 # Input non-AMP DATA from a fasta file
-non_AMP_seqs <- read.fasta(file = "./Data/non_amps.fasta", seqtype = "AA")
+non_AMP_seqs <- read.fasta(file = "../Data/non_amps.fasta", seqtype = "AA")
 
 # Store sequences as a list
 AMP_seq_chars <- sapply(AMP_seqs, function(x) paste(x, collapse = ""))
 non_AMP_seq_chars <- sapply(non_AMP_seqs, function(x) paste(x, collapse = ""))
 
-# Remove duplicates
+# Remove duplicate sequences
 AMP_seq_chars <- unique(AMP_seq_chars)
 non_AMP_seq_chars <- unique(non_AMP_seq_chars)
 ```
@@ -86,7 +82,7 @@ non_AMP_df <- non_AMP_df[!grepl("[^ACDEFGHIKLMNPQRSTVWY]", non_AMP_df$sequence),
 feature_df = rbind(AMP_df, sample_n(non_AMP_df, size=nrow(AMP_df))) 
 ```
 
-Feature creation using packages
+Initial Feature Creation
 
 ```{r}
 # Create some features using the packages
@@ -147,12 +143,7 @@ feature_df$polar_prop <- str_count(feature_df$sequence, "[DEHKNQRSTZ]")/ str_len
 
 ```
 
-Further Cleaning
-
-```{r}
-## Make sure all the columns are the right class
-sapply(feature_df, class)
-```
+Feature Plots
 
 ```{r}
 # Create a list of the feature headings
@@ -507,7 +498,7 @@ rf <- randomForest(
   data = train_rf,
   ntree = 1000,
   mtry = best_mtry,
-  classwt = c(nonAMP = 1, AMP = 1),
+  classwt = c(nonAMP = 1, AMP = 3),
   importance = TRUE
 )
 ```
@@ -530,8 +521,8 @@ plot(roc_obj)
 varImpPlot(rf, n.var = 20)
 ```
 
-Save Model
+Save Model - DO NOT RUN
 
 ```{r}
-saveRDS(rf, file = "rf_model.rds")
+saveRDS(rf, file = "../R/model/rf_model2.rds")
 ```

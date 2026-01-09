@@ -6,11 +6,12 @@ library(Peptides)
 library(dplyr)
 library(stringr)
 library(ggplot2)
-library(here)  # robust paths
+library(here)
+library(DT)
 
 # -------------------------
 # Load trained model
-rf_model <- readRDS("model/rf_model.rds")
+rf_model <- readRDS("model/rf_model2.rds")
 
 # -------------------------
 # Feature computation function
@@ -59,8 +60,12 @@ ui <- fluidPage(
     ),
     
     mainPanel(
-      tableOutput("results"),
-      plotOutput("prediction_plot")
+      DT::DTOutput("results"),  # Table on top
+      br(),
+      fluidRow(
+        column(6, plotOutput("prediction_plot")),  # Histogram on the left
+        column(6, plotOutput("pie_chart"))         # Pie chart on the right
+      )
     )
   )
 )
@@ -100,7 +105,7 @@ server <- function(input, output) {
     req(features())
     prob_matrix <- predict(rf_model, features(), type = "prob")
     prob_amp <- prob_matrix[, "AMP"]
-    class_label <- ifelse(prob_amp > 0.5, "AMP", "nonAMP")
+    class_label <- ifelse(prob_amp > 0.80, "AMP", "nonAMP")
     
     # Compute sequence lengths
     seq_lengths <- nchar(fasta_data()$sequences)
@@ -115,9 +120,18 @@ server <- function(input, output) {
   })
   
   # Render results table
-  output$results <- renderTable({
+  output$results <- DT::renderDT({
     req(predictions())
-    predictions()
+    DT::datatable(
+      predictions(),
+      options = list(
+        pageLength = 100,        # number of rows per page
+        scrollY = "700px",      # vertical scroll
+        scrollCollapse = TRUE,  # allow table to shrink if less rows
+        autoWidth = TRUE        # adjust column widths
+      ),
+      rownames = FALSE          # hide row numbers
+    )
   })
   
   # Plot histogram of AMP probabilities
@@ -126,9 +140,26 @@ server <- function(input, output) {
     df <- predictions()
     ggplot(df, aes(x = AMP_Probability)) +
       geom_histogram(binwidth = 0.05, fill = "steelblue", color = "black") +
-      theme_minimal() +
-      labs(title = "Distribution of AMP Prediction Scores", x = "Probability of being AMP", y = "Number of sequences")
+      theme(axis.text=element_text(size=16),
+                    axis.title=element_text(size=16)) +
+      labs(title = "Distribution of AMP Prediction Scores", x = "AMP Probability", y = "Number of sequences")
   })
+  
+  # Plot Pie chart of AMP status
+  output$pie_chart <- renderPlot({
+    req(predictions())
+    
+    # Count AMP vs nonAMP
+    counts <- table(predictions()$Prediction)
+    
+    # Simple pie chart
+    pie(counts,
+        labels = paste0(names(counts), " (", counts, ")"),
+        col = c("steelblue", "red"),
+        main = "Proportion of AMP vs nonAMP")
+  })
+
+  
   
   # Download CSV
   output$download_results <- downloadHandler(
