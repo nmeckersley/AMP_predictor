@@ -1,33 +1,23 @@
-#Load the required packages
+# app.R
 library(shiny)
-library(Biostrings) # For reading FASTA sequences
-library(randomForest) # Using the model
-library(ggplot2) # For plotting
+library(Biostrings)
+library(randomForest)
+library(Peptides)
 library(dplyr)
 library(stringr)
-library(Peptides)  # For lengthpep(), pI(), hydrophobicity(), charge(), hmoment(), aIndex()
+library(ggplot2)
+library(here)  # robust paths
 
+# -------------------------
+# Load trained model
+rf_model <- readRDS("model/rf_model.rds")
 
-
-# Load the trained model
-model_path <- readRDS("model/rf_model.rds")
-
-
-###############################################################################
-
+# -------------------------
 # Feature computation function
 compute_features <- function(seqs) {
-  
-  # Remove sequences with non-standard amino acids
   seqs <- seqs[!grepl("[^ACDEFGHIKLMNPQRSTVWY]", seqs)]
+  feature_df <- data.frame(sequence = seqs, stringsAsFactors = FALSE)
   
-  # Create data frame
-  feature_df <- data.frame(
-    sequence = seqs,
-    stringsAsFactors = FALSE
-  )
-  
-  # Core peptide features
   feature_df <- feature_df %>%
     mutate(
       length = lengthpep(sequence),
@@ -35,17 +25,7 @@ compute_features <- function(seqs) {
       hydrophobicity = hydrophobicity(sequence),
       charge = charge(sequence),
       amphipathicity = hmoment(sequence),
-      aliphatic_index = aIndex(sequence)
-    )
-  
-  # Add a unique ID
-  feature_df <- feature_df %>%
-    mutate(id = sprintf("%05d", row_number())) %>%
-    relocate(id, .before = 1)
-  
-  # Structural features
-  feature_df <- feature_df %>%
-    mutate(
+      aliphatic_index = aIndex(sequence),
       tiny_prop = str_count(sequence, "[ACGST]") / str_length(sequence),
       small_prop = str_count(sequence, "[ABCDGNPSTV]") / str_length(sequence),
       aromatic_prop = str_count(sequence, "[FHWY]") / str_length(sequence),
@@ -55,23 +35,18 @@ compute_features <- function(seqs) {
       polar_prop = str_count(sequence, "[DEHKNQRSTZ]") / str_length(sequence)
     )
   
-  # Amino acid proportions
   aa <- c("A","C","D","E","F","G","H","I","K","L",
           "M","N","P","Q","R","S","T","V","W","Y")
-  
   for (a in aa) {
     feature_df[[paste0(a, "_prop")]] <- str_count(feature_df$sequence, fixed(a)) / str_length(feature_df$sequence)
   }
   
-  # Keep only numeric features for prediction
   feature_matrix <- feature_df %>% select(-sequence)
-  
   return(feature_matrix)
 }
 
-#####################################################################################
-
-# Define UI
+# -------------------------
+# UI
 ui <- fluidPage(
   titlePanel("Antimicrobial Peptide Predictor"),
   
@@ -90,53 +65,81 @@ ui <- fluidPage(
   )
 )
 
-# Define server
+# -------------------------
+# Server
 server <- function(input, output) {
   
-  # Reactive: Read sequences from uploaded file
-  sequences <- reactive({
+  # Reactive: Read sequences and FASTA IDs
+  fasta_data <- reactive({
     req(input$fasta_file)
     fasta <- readAAStringSet(input$fasta_file$datapath)
-    as.character(fasta)
+    seqs <- as.character(fasta)
+    ids <- names(fasta)
+    
+    # Filter invalid sequences
+    valid_idx <- !grepl("[^ACDEFGHIKLMNPQRSTVWY]", seqs)
+    seqs <- seqs[valid_idx]
+    ids <- ids[valid_idx]
+    
+    if(length(seqs) == 0){
+      showNotification("No valid sequences found!", type = "error")
+      return(NULL)
+    }
+    
+    list(sequences = seqs, ids = ids)
   })
   
   # Reactive: Compute features
   features <- reactive({
-    req(sequences())
-    compute_features(sequences())
+    req(fasta_data())
+    compute_features(fasta_data()$sequences)
   })
   
-  # Reactive: Make predictions when button clicked
+  # Reactive: Make predictions
   predictions <- eventReactive(input$predict_btn, {
     req(features())
-    predict(rf_model, features())
+    prob_matrix <- predict(rf_model, features(), type = "prob")
+    prob_amp <- prob_matrix[, "AMP"]
+    class_label <- ifelse(prob_amp > 0.5, "AMP", "nonAMP")
+    
+    # Compute sequence lengths
+    seq_lengths <- nchar(fasta_data()$sequences)
+    
+    data.frame(
+      ID = fasta_data()$ids,
+      Sequence = fasta_data()$sequences,
+      Length = seq_lengths,
+      AMP_Probability = round(prob_amp, 3),
+      Prediction = class_label
+    )
   })
   
-  # Display results table
+  # Render results table
   output$results <- renderTable({
     req(predictions())
-    data.frame(Sequence = sequences(), Prediction = predictions())
+    predictions()
   })
   
-  # Plot predictions
+  # Plot histogram of AMP probabilities
   output$prediction_plot <- renderPlot({
     req(predictions())
-    df <- data.frame(Prediction = predictions())
-    ggplot(df, aes(x = Prediction)) +
-      geom_bar(fill = "steelblue") +
+    df <- predictions()
+    ggplot(df, aes(x = AMP_Probability)) +
+      geom_histogram(binwidth = 0.05, fill = "steelblue", color = "black") +
       theme_minimal() +
-      labs(title = "AMP Predictions", y = "Count")
+      labs(title = "Distribution of AMP Prediction Scores", x = "Probability of being AMP", y = "Number of sequences")
   })
   
-  # Download results
+  # Download CSV
   output$download_results <- downloadHandler(
     filename = function() { "AMP_predictions.csv" },
     content = function(file) {
-      write.csv(data.frame(Sequence = sequences(), Prediction = predictions()), file, row.names = FALSE)
+      write.csv(predictions(), file, row.names = FALSE)
     }
   )
   
 }
 
+# -------------------------
 # Run the app
 shinyApp(ui = ui, server = server)
