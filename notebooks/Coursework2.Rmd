@@ -3,7 +3,7 @@ title: "R Notebook"
 output: html_notebook
 ---
 
-This notebook contains the code to conduct antimicrobial peptides prediction using machine learning. The code will take a FASTA file of peptide sequences.
+This notebook showing the development of a model
 
 ```{r}
 # Install the necessary packages
@@ -13,10 +13,11 @@ install.packages("seqinr")
 install.packages("stringr")
 install.packages("randomForest")
 install.packages("corrplot")
+install.packages("caret")
 ```
 
 ```{r}
-install.packages("caret")
+install.packages("here")
 ```
 
 ```{r}
