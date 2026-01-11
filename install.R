@@ -1,5 +1,6 @@
 # install.r 
 
+# Packages required for the R shiny app
 packages <- c(
   "shiny",
   "Biostrings",

@@ -1,4 +1,6 @@
 # app.R
+
+# Load the packages from "install.r"
 library(shiny)
 library(Biostrings)
 library(randomForest)
@@ -11,14 +13,15 @@ library(DT)
 
 # -------------------------
 # Load trained model
-rf_model <- readRDS("model/rf_model2.rds")
+rf_model <- readRDS("../model/rf_model.rds")
 
 # -------------------------
 # Feature computation function
 compute_features <- function(seqs) {
-  seqs <- seqs[!grepl("[^ACDEFGHIKLMNPQRSTVWY]", seqs)]
+  seqs <- seqs[!grepl("[^ACDEFGHIKLMNPQRSTVWY]", seqs)] # Extract only sequences with standard amino acids
   feature_df <- data.frame(sequence = seqs, stringsAsFactors = FALSE)
   
+  # Create feature data frame
   feature_df <- feature_df %>%
     mutate(
       length = lengthpep(sequence),
@@ -36,6 +39,7 @@ compute_features <- function(seqs) {
       polar_prop = str_count(sequence, "[DEHKNQRSTZ]") / str_length(sequence)
     )
   
+  # Add individual amino-acid proportions to the feature data frame 
   aa <- c("A","C","D","E","F","G","H","I","K","L",
           "M","N","P","Q","R","S","T","V","W","Y")
   for (a in aa) {
@@ -47,7 +51,10 @@ compute_features <- function(seqs) {
 }
 
 # -------------------------
-# UI
+# R SHINY
+# -------------------------
+
+# UI Elements
 ui <- fluidPage(
   titlePanel("Antimicrobial Peptide Predictor"),
   
@@ -60,7 +67,7 @@ ui <- fluidPage(
     ),
     
     mainPanel(
-      DT::DTOutput("results"),  # Table on top
+      DT::DTOutput("results"),  # Table of sequence results on top
       br(),
       fluidRow(
         column(6, plotOutput("prediction_plot")),  # Histogram on the left
@@ -70,11 +77,12 @@ ui <- fluidPage(
   )
 )
 
+
 # -------------------------
 # Server
 server <- function(input, output) {
   
-  # Reactive: Read sequences and FASTA IDs
+  # Read sequences and FASTA IDs
   fasta_data <- reactive({
     req(input$fasta_file)
     fasta <- readAAStringSet(input$fasta_file$datapath)
@@ -94,22 +102,23 @@ server <- function(input, output) {
     list(sequences = seqs, ids = ids)
   })
   
-  # Reactive: Compute features
+  # Compute features using the "compute_features" function
   features <- reactive({
     req(fasta_data())
     compute_features(fasta_data()$sequences)
   })
   
-  # Reactive: Make predictions
+  # Make predictions
   predictions <- eventReactive(input$predict_btn, {
     req(features())
     prob_matrix <- predict(rf_model, features(), type = "prob")
     prob_amp <- prob_matrix[, "AMP"]
-    class_label <- ifelse(prob_amp > 0.80, "AMP", "nonAMP")
+    class_label <- ifelse(prob_amp > 0.70, "AMP", "nonAMP") # If probability greater than 0.7 then classify as an AMP
     
     # Compute sequence lengths
     seq_lengths <- nchar(fasta_data()$sequences)
     
+    # Create data frame of results
     data.frame(
       ID = fasta_data()$ids,
       Sequence = fasta_data()$sequences,
@@ -119,13 +128,13 @@ server <- function(input, output) {
     )
   })
   
-  # Render results table
+  # Display results table on app
   output$results <- DT::renderDT({
     req(predictions())
     DT::datatable(
       predictions(),
       options = list(
-        pageLength = 100,        # number of rows per page
+        pageLength = 100,       # number of rows per page
         scrollY = "700px",      # vertical scroll
         scrollCollapse = TRUE,  # allow table to shrink if less rows
         autoWidth = TRUE        # adjust column widths
@@ -134,7 +143,7 @@ server <- function(input, output) {
     )
   })
   
-  # Plot histogram of AMP probabilities
+  # Display histogram of AMP probabilities
   output$prediction_plot <- renderPlot({
     req(predictions())
     df <- predictions()
@@ -145,7 +154,7 @@ server <- function(input, output) {
       labs(title = "Distribution of AMP Prediction Scores", x = "AMP Probability", y = "Number of sequences")
   })
   
-  # Plot Pie chart of AMP status
+  # Display Pie chart of AMP status
   output$pie_chart <- renderPlot({
     req(predictions())
     
@@ -160,8 +169,7 @@ server <- function(input, output) {
   })
 
   
-  
-  # Download CSV
+  # Download CSV button
   output$download_results <- downloadHandler(
     filename = function() { "AMP_predictions.csv" },
     content = function(file) {

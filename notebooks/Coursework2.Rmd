@@ -3,36 +3,49 @@ title: "R Notebook"
 output: html_notebook
 ---
 
-This notebook showing the development of a model
+This notebook showing the development of a model to predict antimicrobial peptides (AMPs) from amino acid sequences
 
 ```{r}
 # Install the necessary packages
 install.packages("Peptides", dependencies=TRUE)
 install.packages("protr")
 install.packages("seqinr")
+install.packages("dplyr")
 install.packages("stringr")
-install.packages("randomForest")
 install.packages("corrplot")
+install.packages("randomForest")
+install.packages("pROC")
+install.packages("tidyr")
+install.packages("ggplot2")
 install.packages("caret")
 ```
 
 ```{r}
 # Load the necessary packages
-library("Peptides")
-library("protr")
+library(Peptides)
+library(protr)
 library(seqinr)
 library(dplyr)
 library(stringr)
 library(corrplot)
+library(randomForest)
 library(pROC)
 library(tidyr)
 library(ggplot2)
 library(caret)
 ```
 
-Importing and cleaning of the training dataset.
+[**Data Importing**]{.underline}
 
-Importing the AMP dataset sourced from X. The negative datset was obtained from X using the following search criteria: . Both datasets are a FASTA file
+Importing and cleaning of the training dataset found in "data/" of this repository.
+
+The AMP dataset "amps.fasta" was sourced from DRAMP, an open access web database of known AMPs. The dataset consists of 3306 AMPs from bacteria.
+
+The negative datset was obtained from UniProt using the following search criteria:
+
+"(length:[5 TO 255]) NOT (keyword:KW-0930) NOT (keyword:KW-0929) NOT (keyword:KW-0472) NOT (keyword:KW-0964) NOT (keyword:KW-0051) NOT (keyword:KW-0800) NOT (keyword:AMP) NOT (keyword:anticancer) NOT (keyword:antifungal) NOT (keyword:KW-0044) NOT (keyword:defensive) NOT (keyword:toxic) AND (reviewed:true)"
+
+This resulted in 11129 peptide sequences, that are "likely" not to be AMPs which will be used for the negative dataset, trimmed to the same number of sequences as AMP dataset for balance.
 
 ```{r}
 # Input AMP Data from a fasta file
@@ -46,7 +59,10 @@ AMP_seq_chars <- sapply(AMP_seqs, function(x) paste(x, collapse = ""))
 non_AMP_seq_chars <- sapply(non_AMP_seqs, function(x) paste(x, collapse = ""))
 
 # Remove duplicate sequences
+cat("Number of AMP sequences removed:", length(AMP_seq_chars) - length(unique(AMP_seq_chars)), "\n")
 AMP_seq_chars <- unique(AMP_seq_chars)
+
+cat("Number of Non-AMP sequences removed:", length(non_AMP_seq_chars) - length(unique(non_AMP_seq_chars)), "\n")
 non_AMP_seq_chars <- unique(non_AMP_seq_chars)
 ```
 
@@ -82,11 +98,10 @@ non_AMP_df <- non_AMP_df[!grepl("[^ACDEFGHIKLMNPQRSTVWY]", non_AMP_df$sequence),
 feature_df = rbind(AMP_df, sample_n(non_AMP_df, size=nrow(AMP_df))) 
 ```
 
-Initial Feature Creation
+[**Feature Creation**]{.underline}
 
 ```{r}
-# Create some features using the packages
-
+# Create some features using the Peptides package
 feature_df <- feature_df %>%
   mutate(
     length = lengthpep(sequence),
@@ -100,21 +115,14 @@ feature_df <- feature_df %>%
     hmoment = hmoment(sequence)
   )
 
-
 # Creature a column for IDs
 feature_df <- feature_df %>%
   mutate(id = sprintf("%05d", row_number())) %>%
   relocate(id, .before = 1)
-
-
-
-
-
-
 ```
 
 ```{r}
-# Additional structural features
+# Structural features added to the dataframe
 
 # Tiny (A, C, G, S, T)
 feature_df$tiny_prop <- str_count(feature_df$sequence, "[ACGST]") / str_length(feature_df$sequence)
@@ -143,12 +151,13 @@ feature_df$polar_prop <- str_count(feature_df$sequence, "[DEHKNQRSTZ]")/ str_len
 
 ```
 
-Feature Plots
+[**Basic Plots**]{.underline}
+
+Some feature plots were generated classified by AMP stauts: AMP or nonAMP to look for any identifiable features.
 
 ```{r}
 # Create a list of the feature headings
 key_features <- c("length", "mw", "pI", "hydrophobicity", "charge", "amphipathicity", "aliphatic_index", "boman_index", "hmoment")
-
 
 
 key_plots <- feature_df %>%
@@ -173,10 +182,10 @@ ggplot(key_plots, aes(x = value, fill = class)) +
     y = "Count"
   )
 
-
 ```
 
 ```{r}
+# Part 2 of features plotting: structural features
 
 proportion_features <- c("tiny_prop", "small_prop", "aliphatic_prop", "aromatic_prop", "pos_prop", "neg_prop", "charged_prop", "polar_prop")
 
@@ -203,14 +212,18 @@ ggplot(proportion_plots, aes(x = value, fill = class)) +
   )
 ```
 
-```{r}
-##### Correlation Analysis
+[**Correlation Analysis to Identify Redundant Features**]{.underline}
 
+```{r}
+
+# Create a dataframe of using only the numeric features
 feature_mat <- feature_df %>%
   select(where(is.numeric))
 
+# Compute the Pearson correlation matrix
 cor_mat <- cor(feature_mat, method = "pearson")
 
+# Visualise the correlation matrix
 corrplot(
   cor_mat,
   method = "color",
@@ -218,8 +231,12 @@ corrplot(
   tl.cex = 0.7
 )
 
+# Identify highly correlated feature pairs
+# abs(correlation) > 0.9 indicates strong correlation
+# abs(correlation) < 1 removes self-correlations
 high_cor <- which(abs(cor_mat) > 0.9 & abs(cor_mat) < 1, arr.ind = TRUE)
 
+# Convert highly correlated pairs into a readable data frame
 high_cor_pairs <- unique(
   data.frame(
     feature1 = rownames(cor_mat)[high_cor[, 1]],
@@ -242,26 +259,37 @@ feature_df <- feature_df %>%
     -aliphatic_prop,
     -boman_index   
   )
+```
 
+[**PCA Analysis**]{.underline}
+
+```{r}
+# Recreate the numeric dataframe post-reduction of redundant pairs
 feature_mat_red <- feature_df %>%
   select(where(is.numeric))
 
+# Perform PCA
 pca_red <- prcomp(feature_mat_red, scale. = TRUE)
 
 
+# Create a dataframe of the first two principal components 
 pca_df_red <- data.frame(
   PC1 = pca_red$x[, 1],
   PC2 = pca_red$x[, 2],
   class = feature_df$class
 )
 
+# Visualise the results
 ggplot(pca_df_red, aes(PC1, PC2, color = class)) +
   geom_point(alpha = 0.6) +
   theme_bw() +
   labs(title = "PCA")
+
 ```
 
-Initial Model Building
+Principal Component Analysis (PCA) was applied to the reduced feature set to visualise the structure of the data. The first two principal components show substantial overlap between AMP and non-AMP, indicating that the classes are not linearly separable. This is consistent with the complex and overlapping physicochemical properties of peptide sequences. The observed overlap supports the use of a non-linear classifier, such as Random Forest, which can exploit higher-dimensional feature interactions beyond linear boundaries.
+
+[**Initial Model Building**]{.underline}
 
 ```{r}
 # Splitting the data
@@ -275,11 +303,9 @@ test  <- dplyr::anti_join(feature_df, train, by = 'id')
 Model 1: Logistic Regression
 
 ```{r}
-"Logistic regression using just 5-10 most promising features
-Train on training set
-Evaluate on validation set
-Metrics: accuracy, sensitivity, specificity, AUC-ROC, MCC"
+# Logistic regression using just 5-10 most promising features
 
+# Most promising features
 selected_features <- c(
   "length",
   "charge",
@@ -289,9 +315,12 @@ selected_features <- c(
   "pI"
 )
 
+# Subset training and test data to selected features
+# AMP_status is the binary response variable
 train_lr <- train[, c("AMP_status", selected_features)]
 test_lr  <- test[,  c("AMP_status", selected_features)]
 
+# Fit a logistic regression model
 lr_model <- glm(
   AMP_status ~ .,
   data = train_lr,
@@ -301,7 +330,9 @@ lr_model <- glm(
 summary(lr_model)
 ```
 
-Evaluation of Logistic Regression Model
+A logistic regression model was fitted using a reduced set of biologically relevant features. All selected predictors showed statistically significant associations with antimicrobial activity (p \< 0.001). Positive coefficients for hydrophobicity, amphipathicity, and isoelectric point indicate that peptides with these properties are more likely to be antimicrobial, consistent with known AMP mechanisms
+
+[Evaluation of Logistic Regression Model]{.underline}
 
 ```{r}
 # Predict probabilities on the test set
@@ -337,8 +368,6 @@ mcc <- (TP * TN - FP * FN) /
        sqrt((TP + FP) * (TP + FN) * (TN + FP) * (TN + FN))
 
 # ROC and AUC
-library(pROC)
-
 roc_obj <- roc(
   response = test_lr$AMP_status,
   predictor = prob_amp,
@@ -364,13 +393,15 @@ lr_metrics
 
 ```
 
-Model 2: Random Forest
+Logistic regression achieved an accuracy of \~70% with an AUC of \~0.75, indicating moderate discriminative performance. While sensitivity was relatively high (0.77), specificity was lower (0.64), reflecting a tendency to misclassify non-antimicrobial peptides. The Matthews Correlation Coefficient (0.41) further indicates limited predictive power. These results highlight the limitations of linear models for AMP classification and justify the use of a Random Forest classifier, which achieved substantially higher performance.
+
+[**Model 2: Random Forest**]{.underline}
 
 ```{r}
 train$class <- factor(train$class, levels = c("nonAMP", "AMP"))
 test$class  <- factor(test$class,  levels = c("nonAMP", "AMP"))
 
-# Random Forest
+# Train a Random Forest classifier
 rf <- randomForest(
   class ~ .,
   data = train,
@@ -378,21 +409,24 @@ rf <- randomForest(
   importance = TRUE
 )
 
+# Predict class labels on the test set
 pred_class <- predict(rf, newdata = test)
+
+# Predict class probabilities on the test set
 pred_prob <- predict(rf, newdata = test, type = "prob")[, "AMP"]
-table(Predicted = pred_class, Actual = test$class)
+
+# Generate confusion matrix
+rf_cm <- table(Predicted = pred_class, Actual = test$class)
+rf_cm
 
 
 ```
 
-Evaluation of Random Forest
+[Evaluation of Random Forest]{.underline}
 
 ```{r}
-# Confusion matrix
-rf_cm <- table(Predicted = pred_class, Actual = test$class)
-rf_cm
 
-# Extract counts safely
+# Extract counts
 rf_TP <- as.numeric(rf_cm["AMP", "AMP"])
 rf_TN <- as.numeric(rf_cm["nonAMP", "nonAMP"])
 rf_FP <- as.numeric(rf_cm["AMP", "nonAMP"])
@@ -434,7 +468,7 @@ combined <- bind_rows(
 combined
 ```
 
-Model Refinement
+[Random Forest Model Refinement]{.underline}
 
 ```{r}
 
@@ -446,6 +480,7 @@ Model Refinement
 aa <- c("A","C","D","E","F","G","H","I","K","L",
         "M","N","P","Q","R","S","T","V","W","Y")
 
+# Add individual amino acid proportion to the feature dataframe
 for (a in aa) {
   feature_df[[paste0(a, "_prop")]] <-
     str_count(feature_df$sequence, fixed(a)) /
@@ -455,22 +490,21 @@ for (a in aa) {
 # Splitting the data
 set.seed(22)
 
-#use 70% of dataset as training set and 30% as test set 
-idx <- createDataPartition(feature_df$class, p = 0.7, list = FALSE)
+splitting <- createDataPartition(feature_df$class, p = 0.7, list = FALSE)
 
-train <- feature_df[idx, ]
-test  <- feature_df[-idx, ]
+train_2 <- feature_df[splitting, ]
+test_2  <- feature_df[-splitting, ]
 
-train_rf <- train %>% select(-sequence, -id, -AMP_status)
-test_rf  <- test  %>% select(-sequence, -id, -AMP_status)
+# Create test and train DF without leakage features
+train_rf <- train_2 %>% select(-sequence, -id, -AMP_status)
+test_rf  <- test_2  %>% select(-sequence, -id, -AMP_status)
+
 
 train_rf$class <- factor(train_rf$class, levels = c("nonAMP", "AMP"))
 test_rf$class  <- factor(test_rf$class,  levels = c("nonAMP", "AMP"))
 
-set.seed(22)
-
 x_train <- train_rf %>% select(-class)
-y_train <- as.numeric(train_rf$class)
+y_train <- train_rf$class
 
 tuned <- tuneRF(
   x = x_train,
@@ -480,19 +514,16 @@ tuned <- tuneRF(
   improve = 0.01,
   trace = TRUE
 )
-
-
-
 ```
 
-Final Evaluation
+[**Final Evaluation**]{.underline}
 
 ```{r}
 set.seed(22)
 
 best_mtry <- tuned[which.min(tuned[, "OOBError"]), "mtry"]
-best_mtry
 
+# Train model using the best mtry
 rf <- randomForest(
   class ~ .,
   data = train_rf,
@@ -504,25 +535,28 @@ rf <- randomForest(
 ```
 
 ```{r}
+# Predictions
 pred_class <- predict(rf, newdata = test_rf)
 pred_prob  <- predict(rf, newdata = test_rf, type = "prob")[, "AMP"]
 
+# Confusion matrix
 confusionMatrix(pred_class, test_rf$class)
 
+# ROC
 roc_obj <- roc(
   response = test_rf$class,
   predictor = pred_prob,
   levels = c("nonAMP", "AMP")
 )
-
 auc(roc_obj)
 plot(roc_obj)
 
-varImpPlot(rf, n.var = 20)
+# Variable importance
+varImpPlot(rf, n.var = 15)
 ```
 
 Save Model - DO NOT RUN
 
 ```{r}
-saveRDS(rf, file = "../R/model/rf_model2.rds")
+#saveRDS(rf, file = "../R/model/rf_model.rds")
 ```
