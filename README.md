@@ -16,7 +16,7 @@ This Shiny app predicts **Antimicrobial Peptides (AMPs)** from protein sequence 
 
 -   Upload a **FASTA file** of protein sequences.
 -   Computes sequence features automatically.
--   Predicts **AMP probability** (0–1) for each sequence.
+-   Predicts **AMP probability** (0–1) for each sequence. Predicted AMP if ≥ 0.70.
 -   Shows a **table** with:
     -   FASTA ID
     -   Sequence
