@@ -291,11 +291,13 @@ Principal Component Analysis (PCA) was applied to the reduced feature set to vis
 
 [**Initial Model Building**]{.underline}
 
+Will compare a linear regression model with a random forest model
+
 ```{r}
 # Splitting the data
-set.seed(123)
+set.seed(12)
 
-#use 70% of dataset as training set and 30% as test set 
+# Use 70% of dataset as training set and 30% as test set 
 train <- feature_df %>% dplyr::sample_frac(0.70)
 test  <- dplyr::anti_join(feature_df, train, by = 'id')
 ```
@@ -422,6 +424,8 @@ rf_cm
 
 ```
 
+The model correctly classified all 721 non-AMP sequences predicted as non-AMP, while 292 AMP sequences were misclassified as non-AMP. Overall, 968 AMP sequences were correctly identified, indicating high sensitivity for AMP detection but some misclassification of AMP sequences as non-AMP.
+
 [Evaluation of Random Forest]{.underline}
 
 ```{r}
@@ -456,7 +460,9 @@ rf_metrics <- data.frame(
 rf_metrics
 ```
 
-Comparison Between Models
+The Random Forest model demonstrated strong performance in classifying AMP and non-AMP sequences. It achieved an overall accuracy of approximately 85.3%, correctly classifying the majority of sequences. Sensitivity was perfect at 100%, indicating that the model successfully identified all AMP sequences in the test set. Specificity was 71.2%, showing that around 29% of non-AMP sequences were incorrectly classified as AMPs. The AUC of 1.0 indicates excellent discrimination between AMP and non-AMP sequences across all thresholds. Finally, the MCC of 0.74 reflects a high-quality prediction that balances performance across both classes, even with some misclassification of non-AMPs.
+
+[**Comparison Between Models**]{.underline}
 
 ```{r}
 combined <- bind_rows(
@@ -468,7 +474,15 @@ combined <- bind_rows(
 combined
 ```
 
-[Random Forest Model Refinement]{.underline}
+Comparing the two models, the Random Forest outperformed Logistic Regression across most metrics. RF achieved higher accuracy (85.3% vs 67.1%) and perfect sensitivity (100% vs 73.5%), indicating it identified all AMP sequences correctly. Its specificity (71.2% vs 61.0%) and AUC (1.0 vs 0.72) were also superior, reflecting better discrimination between AMP and non-AMP sequences. Additionally, RF’s MCC of 0.74 suggests stronger overall predictive power and balance, compared to LR’s 0.35, which indicates that LR struggled with correctly classifying both classes simultaneously. Overall, RF provides a more reliable and robust classification for this dataset. The next step is to tune the model and improve performance.
+
+[**Random Forest Model Refinement**]{.underline}
+
+To improve the performance of the random forest model, additional features were derived from the sequences, including the proportion of each individual amino acid in the peptide sequences.
+
+The dataset was then split again into training (70%) and testing (30%) sets, ensuring that sequence identifiers and any potential leakage features (`sequence`, `id`, `AMP_status`) were removed from the model input.
+
+The optimal `mtry` value, the number of features considered at each split, was determined using `tuneRF`, which evaluates different values of `mtry` by iteratively increasing it and selecting the one that minimizes the out-of-bag error.
 
 ```{r}
 
@@ -516,11 +530,16 @@ tuned <- tuneRF(
 )
 ```
 
+The Random Forest model tuning showed that using `mtry = 5` minimized the out-of-bag (OOB) error to 11.18%, indicating optimal performance when five features are considered at each split. Lowering `mtry` to 4 or increasing it to 7 slightly worsened the OOB error, suggesting that too few or too many features per split reduces predictive efficiency.
+
 [**Final Evaluation**]{.underline}
+
+Using this optimal `mtry`, a random forest model with 1,000 trees was trained on the weighted dataset, assigning higher importance to the `AMP` class to account for class imbalance. Feature importance was computed, allowing identification of the most informative predictors for distinguishing AMP from non-AMP sequences.
 
 ```{r}
 set.seed(22)
 
+# Select the lowest mtry
 best_mtry <- tuned[which.min(tuned[, "OOBError"]), "mtry"]
 
 # Train model using the best mtry
@@ -529,34 +548,46 @@ rf <- randomForest(
   data = train_rf,
   ntree = 1000,
   mtry = best_mtry,
-  classwt = c(nonAMP = 1, AMP = 3),
-  importance = TRUE
+  classwt = c(nonAMP = 1, AMP = 3), # Weight classes to handle imbalance (AMP more heavily weighted)
+  importance = TRUE # Compute feature importance
 )
 ```
 
+Performance was evaluated with a confusion matrix and ROC curve, with the AUC quantifying the model’s discriminatory power. Feature importance was also assessed to identify the most informative predictors.
+
 ```{r}
-# Predictions
+# Predict the class labels for the test set
 pred_class <- predict(rf, newdata = test_rf)
+
+# Predict the probabilities of the AMP class
 pred_prob  <- predict(rf, newdata = test_rf, type = "prob")[, "AMP"]
 
-# Confusion matrix
+# Confusion matrix to compare predicted vs actual class labels
 confusionMatrix(pred_class, test_rf$class)
 
-# ROC
+# ROC curve and AUC
 roc_obj <- roc(
   response = test_rf$class,
   predictor = pred_prob,
   levels = c("nonAMP", "AMP")
 )
+
+# Compute the Area Under the Curve (AUC) to quantify model discrimination
 auc(roc_obj)
+
+# Plot ROC curve
 plot(roc_obj)
 
 # Variable importance
 varImpPlot(rf, n.var = 15)
 ```
 
-Save Model - DO NOT RUN
+The Random Forest model achieved strong performance in distinguishing AMP from non-AMP sequences, with an overall accuracy of 87.6%, balanced accuracy of 87.6%, sensitivity of 89.1%, and specificity of 86.1%. The ROC curve rises sharply toward the top-left corner, and an AUC of 0.952 confirms excellent discriminative ability across thresholds. Feature importance analysis revealed that methionine proportion (M_prop), charge, amphipathicity, and sequence length are the most influential predictors, highlighting key compositional and physicochemical properties driving model classification.
+
+These results demonstrate that the model reliably identifies AMP sequences while providing interpretable insights into the biological features that contribute most to its predictions.
+
+[**Save Model - Do not run (already saved in "/model")**]{.underline}
 
 ```{r}
-#saveRDS(rf, file = "../R/model/rf_model.rds")
+#saveRDS(rf, file = "../model/rf_model.rds")
 ```
