@@ -19,7 +19,7 @@ rf_model <- readRDS("../model/rf_model.rds")
 # Feature computation function
 compute_features <- function(seqs) {
   seqs <- seqs[!grepl("[^ACDEFGHIKLMNPQRSTVWY]", seqs)] # Extract only sequences with standard amino acids
-  feature_df <- data.frame(sequence = seqs, stringsAsFactors = FALSE)
+  feature_df <- data.frame(sequence = seqs, stringsAsFactors = FALSE) # Store as a data frame
   
   # Create feature data frame
   feature_df <- feature_df %>%
@@ -56,7 +56,7 @@ compute_features <- function(seqs) {
 
 # UI Elements
 ui <- fluidPage(
-  titlePanel("Antimicrobial Peptide Predictor"),
+  titlePanel("AMP_Predictor"),
   
   sidebarLayout(
     sidebarPanel(
@@ -149,6 +149,17 @@ server <- function(input, output) {
     df <- predictions()
     ggplot(df, aes(x = AMP_Probability)) +
       geom_histogram(binwidth = 0.05, fill = "steelblue", color = "black") +
+      geom_vline(xintercept = 0.70, linetype = "dashed", color = "black", linewidth = 1) +
+      annotate(
+        "text",
+        x = 0.70,
+        y = Inf,
+        label = "Predicted AMP (≥ 0.70)",
+        hjust = -0.05, 
+        vjust = 1.5,
+        color = "black",
+        size = 5
+      ) +
       theme(axis.text=element_text(size=16),
                     axis.title=element_text(size=16)) +
       labs(title = "Distribution of AMP Prediction Scores", x = "AMP Probability", y = "Number of sequences")

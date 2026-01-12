@@ -43,7 +43,7 @@ The AMP dataset "amps.fasta" was sourced from DRAMP, an open access web database
 
 The negative datset was obtained from UniProt using the following search criteria:
 
-"(length:[5 TO 255]) NOT (keyword:KW-0930) NOT (keyword:KW-0929) NOT (keyword:KW-0472) NOT (keyword:KW-0964) NOT (keyword:KW-0051) NOT (keyword:KW-0800) NOT (keyword:AMP) NOT (keyword:anticancer) NOT (keyword:antifungal) NOT (keyword:KW-0044) NOT (keyword:defensive) NOT (keyword:toxic) AND (reviewed:true)"
+"(length:[5 TO 50]) NOT (keyword:KW-0930) NOT (keyword:KW-0929) NOT (keyword:KW-0472) NOT (keyword:KW-0964) NOT (keyword:KW-0051) NOT (keyword:KW-0800) NOT (keyword:AMP) NOT (keyword:anticancer) NOT (keyword:antifungal) NOT (keyword:KW-0044) NOT (keyword:defensive) NOT (keyword:toxic) AND (reviewed:true)"
 
 This resulted in 11129 peptide sequences, that are "likely" not to be AMPs which will be used for the negative dataset, trimmed to the same number of sequences as AMP dataset for balance.
 
@@ -482,7 +482,7 @@ To improve the performance of the random forest model, additional features were 
 
 The dataset was then split again into training (70%) and testing (30%) sets, ensuring that sequence identifiers and any potential leakage features (`sequence`, `id`, `AMP_status`) were removed from the model input.
 
-The optimal `mtry` value, the number of features considered at each split, was determined using `tuneRF`, which evaluates different values of `mtry` by iteratively increasing it and selecting the one that minimizes the out-of-bag error.
+The optimal `mtry` value, the number of features considered at each split, was determined using `tuneRF`, which evaluates different values of `mtry` by iteratively increasing it and selecting the one that minimises the out-of-bag error.
 
 ```{r}
 
@@ -530,7 +530,7 @@ tuned <- tuneRF(
 )
 ```
 
-The Random Forest model tuning showed that using `mtry = 5` minimized the out-of-bag (OOB) error to 11.18%, indicating optimal performance when five features are considered at each split. Lowering `mtry` to 4 or increasing it to 7 slightly worsened the OOB error, suggesting that too few or too many features per split reduces predictive efficiency.
+The Random Forest model tuning showed that using `mtry = 5` minimised the out-of-bag (OOB) error to 11.18%, indicating optimal performance when five features are considered at each split. Lowering `mtry` to 4 or increasing it to 7 slightly worsened the OOB error, suggesting that too few or too many features per split reduces predictive efficiency.
 
 [**Final Evaluation**]{.underline}
 

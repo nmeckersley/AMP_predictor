@@ -1,6 +1,6 @@
 # AMP_Predictor
 
-This Shiny app predicts **Antimicrobial Peptide (AMP)** from protein sequence data (.fasta), using a trained Random Forest model.
+This Shiny app predicts **Antimicrobial Peptides (AMPs)** from protein sequence data (.fasta), using a trained Random Forest model. AMPs are short (10-50aa), naturally occurring proteins that play a key role in innate immunity by killing or inhibiting the growth of bacteria and other pathogens, often through disruption of microbial cell membranes. Identifying AMPs is important because they are promising candidates for new antimicrobial therapies, especially in the face of increasing antibiotic resistance.
 
 ## Note to the Marker
 
@@ -48,15 +48,15 @@ Click Run App.
 
 If all packages were installed correctly, this will launch the Shiny app.
 
-Click Browse to upload a FASTA file. There are three example files included:
+Click Browse to upload a FASTA file. There are three example files located in "data/":
 
-1.  mock.fasta: 100 random protein sequences from UniProt
+1.  mock.fasta: 100 random short protein sequences from UniProt
 2.  amps.fasta: 3,306 AMP sequences used for training
 3.  non_amps.fasta: 11,000 sequences from UniProt filtered for non-AMP characteristics
 
-Click Predict AMP to generate results.
+Click "**Predict AMP**" to generate results.
 
-The table of predictions can be exported as a .csv file for further analysis.
+The table of predictions can be downloaded as a .csv file for further analysis.
 
 ------------------------------------------------------------------------
 
